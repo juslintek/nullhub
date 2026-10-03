@@ -6,7 +6,9 @@
 2. One concern per PR. No drive-by refactors.
 3. Build prerequisites: `npm` (UI build), `zig` 0.16.0.
 4. Before every commit:
-   - `zig build test --summary all` — 0 failures, 0 leaks
+   - `bash tests/test_backend.sh` — the backend gate CI actually runs; wraps
+     `zig build test` + `zig build test-integration`, both with
+     `-Dembed-ui=false -Dbuild-ui=false` — 0 failures, 0 leaks
    - `zig fmt --check src/`
    - UI-touching changes: `npm --prefix ui run build` must succeed
 5. Every PR runs the 4-target CI matrix (linux-x86_64, linux-aarch64,
