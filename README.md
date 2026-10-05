@@ -68,12 +68,16 @@ via available system package managers (`apt`, `dnf`, `yum`, `pacman`, `zypper`,
 ```
 nullhub                          # Start server + open browser
 nullhub serve [--host H] [--port N]
+               [--token TOKEN | --token-file PATH]
                [--allowed-origin ORIGIN] ...
                                  # Start server. Repeat --allowed-origin to
                                  # authorize extra CORS origins (e.g. a
                                  # Tailscale domain). Origins may also come
                                  # from NULLHUB_ALLOWED_ORIGINS as a
                                  # comma-separated list.
+                                 # A token protects every route except /health.
+                                 # --token-file reads a credential without
+                                 # placing its value in process arguments.
 nullhub version | -v | --version # Print version
 
 nullhub install <component>      # Terminal wizard
