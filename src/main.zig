@@ -33,6 +33,10 @@ pub fn main(init: std.process.Init) !void {
         .serve => |opts| {
             std.debug.print("nullhub v{s}\n", .{version.string});
 
+            if (opts.invalid_credential_options) return error.InvalidTokenOptions;
+            const auth_token = try loadServeToken(allocator, opts.token, opts.token_file);
+            defer if (auth_token) |token| allocator.free(token);
+
             var paths = try paths_mod.Paths.init(allocator, null);
             defer paths.deinit(allocator);
             try paths.ensureDirs();
@@ -49,6 +53,7 @@ pub fn main(init: std.process.Init) !void {
 
             var srv = try server.Server.init(allocator, opts.host, opts.port, &mgr, &mutex);
             defer srv.deinit();
+            srv.auth_token = auth_token;
             var mdns = try mdns_mod.Publisher.init(allocator, paths, opts.host, opts.port);
             defer mdns.deinit();
             mdns.start(opts.port);
@@ -131,6 +136,37 @@ pub fn main(init: std.process.Init) !void {
         },
         .help => cli.printUsage(),
     }
+}
+
+fn loadServeToken(
+    allocator: std.mem.Allocator,
+    inline_token: ?[]const u8,
+    token_file: ?[]const u8,
+) !?[]const u8 {
+    if (inline_token != null and token_file != null) return error.MultipleTokenSources;
+    if (inline_token) |token| {
+        if (!isValidServeToken(token)) return error.InvalidToken;
+        return try allocator.dupe(u8, token);
+    }
+    const path = token_file orelse return null;
+    const contents = try std_compat.fs.cwd().readFileAlloc(allocator, path, 4096);
+    errdefer allocator.free(contents);
+    const token = std.mem.trim(u8, contents, "\r\n");
+    if (!isValidServeToken(token)) return error.InvalidToken;
+    if (token.len != contents.len) {
+        const trimmed = try allocator.dupe(u8, token);
+        allocator.free(contents);
+        return trimmed;
+    }
+    return contents;
+}
+
+fn isValidServeToken(token: []const u8) bool {
+    if (token.len == 0) return false;
+    for (token) |byte| {
+        if (byte < 0x21 or byte > 0x7e) return false;
+    }
+    return true;
 }
 
 fn runApiChecked(allocator: std.mem.Allocator, opts: cli.ApiOptions) void {

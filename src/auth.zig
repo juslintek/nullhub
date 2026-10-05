@@ -38,10 +38,9 @@ pub fn isApiPath(path: []const u8) bool {
 }
 
 /// Returns true for paths that do not require authentication.
-/// Public paths: /health and any path outside the /api namespace.
+/// The health endpoint stays public so service monitors can check readiness.
 pub fn isPublicPath(path: []const u8) bool {
-    if (std.mem.eql(u8, pathWithoutQuery(path), "/health")) return true;
-    return !isApiPath(path);
+    return std.mem.eql(u8, pathWithoutQuery(path), "/health");
 }
 
 // --- Tests ---
@@ -82,8 +81,9 @@ test "isPublicPath returns true for /health" {
     try std.testing.expect(isPublicPath("/health") == true);
 }
 
-test "isPublicPath returns true for static paths like /index.html" {
-    try std.testing.expect(isPublicPath("/index.html") == true);
+test "isPublicPath protects static paths" {
+    try std.testing.expect(isPublicPath("/index.html") == false);
+    try std.testing.expect(isPublicPath("/ui/app.js") == false);
 }
 
 test "isPublicPath returns false for /api/status" {
@@ -96,6 +96,10 @@ test "isPublicPath returns false for bare /api" {
 
 test "isPublicPath returns false for bare /api with query string" {
     try std.testing.expect(isPublicPath("/api?format=json") == false);
+}
+
+test "isPublicPath keeps health public with query string" {
+    try std.testing.expect(isPublicPath("/health?ready=1"));
 }
 
 test "isApiPath only matches the api namespace" {

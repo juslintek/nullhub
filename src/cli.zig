@@ -10,6 +10,9 @@ pub const ServeOptions = struct {
     port: u16 = access.default_port,
     host: []const u8 = access.default_bind_host,
     no_open: bool = false,
+    token: ?[]const u8 = null,
+    token_file: ?[]const u8 = null,
+    invalid_credential_options: bool = false,
     /// Additional origins accepted by the API CORS/origin guard, in addition
     /// to the bind host and built-in local aliases. Each entry is an origin
     /// of the form `scheme://host[:port]` with no trailing slash.
@@ -221,6 +224,8 @@ fn parseServe(allocator: std.mem.Allocator, args: *ArgIterator) Command {
             }
         } else if (std.mem.eql(u8, arg, "--no-open")) {
             opts.no_open = true;
+        } else if (std.mem.eql(u8, arg, "--token") or std.mem.eql(u8, arg, "--token-file")) {
+            parseServeCredentialOption(&opts, arg, args.next());
         } else if (std.mem.eql(u8, arg, "--allowed-origin")) {
             if (args.next()) |val| {
                 if (!appendOriginIfValid(allocator, &origins, val)) {
@@ -241,6 +246,27 @@ fn parseServe(allocator: std.mem.Allocator, args: *ArgIterator) Command {
         };
     }
     return .{ .serve = opts };
+}
+
+fn parseServeCredentialOption(opts: *ServeOptions, flag: []const u8, value: ?[]const u8) void {
+    const option_value = value != null and std.mem.startsWith(u8, value.?, "-");
+    const credential = if (option_value) "" else value orelse "";
+    if (std.mem.eql(u8, flag, "--token")) {
+        if (opts.token != null) {
+            opts.invalid_credential_options = true;
+        } else {
+            opts.token = credential;
+        }
+        opts.no_open = true;
+    } else if (std.mem.eql(u8, flag, "--token-file")) {
+        if (opts.token_file != null) {
+            opts.invalid_credential_options = true;
+        } else {
+            opts.token_file = credential;
+        }
+        opts.no_open = true;
+    }
+    if (option_value) opts.invalid_credential_options = true;
 }
 
 /// Append a validated, allocator-owned copy of `raw` to `list`. Returns
@@ -479,7 +505,7 @@ pub fn printUsage() void {
         \\Usage: nullhub [command]
         \\
         \\Commands:
-        \\  serve [--host H] [--port N] [--no-open]
+        \\  serve [--host H] [--port N] [--no-open] [--token TOKEN | --token-file PATH]
         \\        [--allowed-origin ORIGIN ...]
         \\                            Start web UI server (default). Repeat
         \\                            --allowed-origin to authorize extra
@@ -570,6 +596,38 @@ test "ServeOptions defaults" {
     try std.testing.expectEqualStrings(access.default_bind_host, opts.host);
     try std.testing.expect(!opts.no_open);
     try std.testing.expectEqual(@as(usize, 0), opts.extra_allowed_origins.len);
+}
+
+test "serve credential options suppress browser launch" {
+    var inline_token = ServeOptions{};
+    parseServeCredentialOption(&inline_token, "--token", "value");
+    try std.testing.expectEqualStrings("value", inline_token.token.?);
+    try std.testing.expect(inline_token.no_open);
+
+    var token_file = ServeOptions{};
+    parseServeCredentialOption(&token_file, "--token-file", "/run/credentials/api-token");
+    try std.testing.expectEqualStrings("/run/credentials/api-token", token_file.token_file.?);
+    try std.testing.expect(token_file.no_open);
+
+    var missing_inline_token = ServeOptions{};
+    parseServeCredentialOption(&missing_inline_token, "--token", null);
+    try std.testing.expectEqualStrings("", missing_inline_token.token.?);
+    try std.testing.expect(missing_inline_token.no_open);
+
+    var missing_token_file = ServeOptions{};
+    parseServeCredentialOption(&missing_token_file, "--token-file", null);
+    try std.testing.expectEqualStrings("", missing_token_file.token_file.?);
+    try std.testing.expect(missing_token_file.no_open);
+    var option_as_value = ServeOptions{};
+    parseServeCredentialOption(&option_as_value, "--token", "--token-file");
+    try std.testing.expectEqualStrings("", option_as_value.token.?);
+    try std.testing.expect(option_as_value.invalid_credential_options);
+
+    var repeated = ServeOptions{};
+    parseServeCredentialOption(&repeated, "--token", "first");
+    parseServeCredentialOption(&repeated, "--token", "second");
+    try std.testing.expectEqualStrings("first", repeated.token.?);
+    try std.testing.expect(repeated.invalid_credential_options);
 }
 
 test "isValidOrigin accepts scheme+host, rejects malformed" {
